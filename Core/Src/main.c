@@ -32,6 +32,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define CAPTURENUM 16
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -48,6 +49,19 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
+//12 P/R , Gear reduction 1 : 64
+//DMA Buffer
+uint16_t capturedata[CAPTURENUM] = { 0 };
+
+//diff time of capture data
+int32_t DiffTime[CAPTURENUM-1] = { 0 };
+
+//Mean difftime
+float MeanTime =0;
+
+//for microsecond measurement
+uint64_t _micros = 0;
+uint64_t TimeStamp = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -58,7 +72,8 @@ static void MX_USART2_UART_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM11_Init(void);
 /* USER CODE BEGIN PFP */
-
+uint64_t micros();
+void encoderSpeedReaderCycle();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -100,12 +115,26 @@ int main(void)
   MX_TIM11_Init();
   /* USER CODE BEGIN 2 */
 
+  //start us count
+  HAL_TIM_Base_Start_IT(&htim11);
+
+  //start Input capture in DMA
+  HAL_TIM_Base_Start(&htim1);
+  HAL_TIM_IC_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t*) &capturedata, CAPTURENUM);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  encoderSpeedReaderCycle();
+
+	  if(micros()-TimeStamp > 1000000)//us
+	  {
+		  TimeStamp = micros();
+		  HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -330,7 +359,42 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void encoderSpeedReaderCycle()
+{
+	//get DMA Position form number of data
+	uint32_t CapPos = CAPTURENUM -  __HAL_DMA_GET_COUNTER(htim1.hdma[TIM_DMA_ID_CC1]);
+	uint32_t sum = 0 ;
 
+	//calculate diff from all buffer
+	for(register int i=0 ;i < CAPTURENUM-1;i++)
+	{
+		DiffTime[i]  = capturedata[(CapPos+1+i)%CAPTURENUM]-capturedata[(CapPos+i)%CAPTURENUM];
+		//time never go back, but timer can over flow , conpensate that
+		if (DiffTime[i] <0)
+		{
+			DiffTime[i]+=65535;
+		}
+		//Sum all 15 Diff
+		sum += DiffTime[i];
+	}
+
+	//mean all 15 Diff
+	MeanTime =sum / (float)(CAPTURENUM-1);
+}
+
+uint64_t micros()
+{
+	return _micros + htim11.Instance->CNT;//counter of Timer11
+}
+
+//interrupt
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if(htim == &htim11)
+	{
+		_micros += 65535;
+	}
+}
 /* USER CODE END 4 */
 
 /**
