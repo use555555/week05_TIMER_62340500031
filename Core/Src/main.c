@@ -150,7 +150,7 @@ int main(void)
 		  CapPulsePerSec = 1000000.0/MeanTime;
 	  }
 
-	  MotorSpeed = (CapPulsePerSec/12)*60/64;
+	  MotorSpeed = (CapPulsePerSec/12.0)*(60.0/64.0);
   }
   /* USER CODE END 3 */
 }
